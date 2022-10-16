@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import io
 from datetime import datetime
+from io import BytesIO
 
 import requests
 from requests import Response, HTTPError
@@ -24,10 +26,30 @@ class TwitchGrabber:
     @classmethod
     def grab(cls: TwitchGrabber, channel_name: str) -> IMCache.ChannelInformation | bool:
         payload: dict = {
-            'query': 'query ChannelAboutPage_Query(  $login: String!  $url: String!) {  channel: user(login: $login) {    ...ChannelLayout_user    id    __typename    login    stream {      id      __typename    }    panels {      __typename      type      ... on DefaultPanel {        id        __typename        ...DefaultPanel_panel      }      id      __typename    }  }  ...SeoHead_query}fragment ChannelCover_user on User {  login  bannerImageURL  primaryColorHex}fragment ChannelDescription_user on User {  login  displayName  description  lastBroadcast {    game {      displayName      id      __typename    }    id    __typename  }  videos(first: 30) {    edges {      node {        id        __typename        game {          id          __typename          displayName        }      }    }  }}fragment ChannelLayout_user on User {  ...ChannelCover_user  ...ChannelProfileInfo_user  id  __typename  login}fragment ChannelName_user on User {  displayName  login  roles {    isPartner  }}fragment ChannelProfileInfo_user on User {  ...ChannelStatus_user  ...ChannelDescription_user  ...ChannelName_user  ...SocialMediaLinks_user  ...useFollowChannelFragment  profileImageURL(width: 150)  login  displayName  primaryColorHex  followers {    totalCount  }  stream {    id    __typename  }}fragment ChannelStatus_user on User {  hosting {    id    __typename    login    displayName  }  lastBroadcast {    id    __typename    startedAt    game {      id      __typename      displayName    }  }  stream {    id    __typename    createdAt    game {      id      __typename      displayName    }    type    viewersCount  }}fragment DefaultPanel_panel on DefaultPanel {  id  __typename  title  linkURL  imageURL  description}fragment SeoHead_query on Query {  urlMetadata(url: $url) {    title    metatags {      name      attributes {        key        value      }    }    jsonld    share {      title      text      url    }  }}fragment SocialMediaLinks_user on User {  channel {    id    __typename    socialMedias {      id      __typename      name      title      url    }  }}fragment useFollowChannelFragment on User {  id  __typename  self {    follower {      followedAt    }  }}',
+            'query': '''
+                query ChannelAboutPage_Query($login: String!) {
+                  channel: user(login: $login) {
+                    id
+                    login
+                    displayName
+                    profileImageURL(width: 50)
+                    followers {
+                      totalCount
+                    }
+                    lastBroadcast {
+                      startedAt
+                    }
+                    stream {
+                      viewersCount
+                    }
+                    roles {
+                      isPartner
+                    }
+                  }
+                }
+                ''',
             'variables': {
-                'login': channel_name,
-                'url': 'https://m.twitch.tv/' + channel_name + 'papaplatte/about'
+                'login': channel_name
             }
         }
         headers: dict = {
@@ -44,7 +66,9 @@ class TwitchGrabber:
             data: dict = res.json()
             if data['data'] and data['data']['channel']:
                 channel: dict = data['data']['channel']
-                started_at: datetime = TwitchGrabber.__parse_date(date_string=channel['lastBroadcast']['startedAt'])
+                started_at: datetime = None
+                if channel['lastBroadcast']['startedAt']:
+                    started_at = TwitchGrabber.__parse_date(date_string=channel['lastBroadcast']['startedAt'])
                 return IMCache.ChannelInformation(
                     name=channel['login'],
                     displayed_name=channel['displayName'],
@@ -62,3 +86,15 @@ class TwitchGrabber:
         except Exception as exc:
             Logger.warn(message="An exception occurred while trying to parse Twitch GQL data: {}".format(exc))
         return False
+    @classmethod
+    def grab_avatar(cls: TwitchGrabber, url: str) -> BytesIO | bool:
+        headers: dict = {
+            'User-Agent': None
+        }
+        try:
+            res: Response = requests.request('GET', url, json=None, data=None, headers=headers, timeout=5)
+            if not res.status_code == 200:
+                Logger.warn(message="Failed getting avatar: {}".format(res.content))
+            return io.BytesIO(initial_bytes=res.content)
+        except HTTPError as err:
+            return False
