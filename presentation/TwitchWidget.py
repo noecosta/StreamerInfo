@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import io
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from PIL import Image, ImageDraw, ImageFont
 from falcon import Request, Response, HTTP_200, HTTP_404
 
-from business.Logger import Logger
 from business.TwitchGrabber import TwitchGrabber
 from data.IMCache import IMCache
 
@@ -16,6 +15,67 @@ class TwitchWidget:
         self.__version__ = version
         self.ic: IMCache.__class__ = IMCache
         self.tg: TwitchGrabber.__class__ = TwitchGrabber
+
+    @staticmethod
+    def __to_hr(dt: datetime) -> str:
+        if not dt:
+            return 'Never'
+        now = datetime.now(timezone.utc)
+        delta = now - dt
+        delta_seconds: float = delta.total_seconds()
+
+        day = int(delta_seconds // (24 * 3600))
+        year = 0
+        if day > 365:
+            year = int(day // 365)
+            day = day - (year * 365)
+        time = delta_seconds % (24 * 3600)
+        hour = int(time // 3600)
+        time %= 3600
+        minutes = int(time // 60)
+        time %= 60
+        seconds = int(time)
+
+        if year > 0:
+            if day > 0:
+                return '{}y {}d ago'.format(year, day)
+            return '{}y ago'.format(year)
+        if day > 0:
+            if hour > 0:
+                return '{}d {}h ago'.format(day, hour)
+            return '{}d ago'.format(day)
+        if hour > 0:
+            if minutes > 0:
+                return '{}h {}m ago'.format(hour, minutes)
+            return '{}h ago'.format(hour)
+        if minutes > 0:
+            if seconds > 0:
+                return '{}m {}s ago'.format(minutes, seconds)
+            return '{}s ago'.format(seconds)
+        if seconds > 0:
+            return '{}s ago'.format(seconds)
+        return 'a few seconds ago'
+
+    @staticmethod
+    def __find_font_size(font: ImageFont, text: str, width: int) -> ImageFont:
+        font = font.font_variant(size=3)
+        size: int = font.size
+        increment: int = 75
+        last_font: ImageFont = None
+        while True:
+            if font.getlength(text) < width:
+                size += increment
+                last_font = font
+            else:
+                increment = increment // 2
+                size -= increment
+            font = font.font_variant(size=size)
+            if increment < 1:
+                break
+        if font.getlength(text) > width:
+            return last_font
+        else:
+            return font
 
     def on_get(self: TwitchWidget, request: Request, response: Response, channel: str) -> None:
         if channel.startswith('favico'):
@@ -59,19 +119,57 @@ class TwitchWidget:
             if avatar:
                 base.alpha_composite(tpl_avatar, dest=(18, 52))
             base.alpha_composite(tpl_channel_avatar_border)
-            base.alpha_composite(tpl_channel_partnered)
             base_2d_draw.text(
                 xy=(235, 6),
                 text=self.__version__,
                 fill='#10002b',
-                font=base_font.font_variant(None, 16)
+                font=base_font.font_variant(size=16)
             )
             base_2d_draw.text(
                 xy=(42, 188),
                 text='GENERATED ON {}'.format(datetime.now().strftime('%Y-%m-%d %H:%M:%S')),
                 fill='#391f54',
-                font=base_font.font_variant(None, 16)
+                font=base_font.font_variant(size=16)
             )
+            if information:
+                if information.is_partnered:
+                    base.alpha_composite(tpl_channel_partnered)
+                base_2d_draw.text(
+                    xy=(80, 55),
+                    text=information.displayed_name[:19],
+                    fill='#FFFFFF',
+                    font=base_font.font_variant(size=25)
+                )
+                base_2d_draw.text(
+                    xy=(80, 77),
+                    text='Last stream: ' + ('LIVE' if information.live_count else TwitchWidget.__to_hr(information.latest_stream)),
+                    fill='#FFFFFF',
+                    font=base_font.font_variant(size=16)
+                )
+                base_2d_draw.text(
+                    xy=(68, 125),
+                    text='Viewers:',
+                    fill='#FFFFFF',
+                    font=base_font.font_variant(size=16)
+                )
+                base_2d_draw.text(
+                    xy=(68, 150),
+                    text='Followers:',
+                    fill='#FFFFFF',
+                    font=base_font.font_variant(size=16)
+                )
+                base_2d_draw.text(
+                    xy=(148, 125),
+                    text=str('{:,}'.format(information.live_count).replace(',', '.') if information.live_count else '-').rjust(10, ' '),
+                    fill='#FFFFFF',
+                    font=base_font.font_variant(size=16)
+                )
+                base_2d_draw.text(
+                    xy=(148, 150),
+                    text=str('{:,}'.format(information.follower_count).replace(',', '.') if information.follower_count else '-').rjust(10, ' '),
+                    fill='#FFFFFF',
+                    font=base_font.font_variant(size=16)
+                )
 
             rendered_image: io.BytesIO = io.BytesIO()
             base.save(rendered_image, 'WEBP', lossless=True, quality=100)

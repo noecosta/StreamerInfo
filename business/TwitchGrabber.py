@@ -5,6 +5,9 @@ from datetime import datetime
 from io import BytesIO
 
 import requests
+from dateutil import parser
+from dateutil.parser import ParserError
+from dateutil.tz import UTC
 from requests import Response, HTTPError
 
 from business.Logger import Logger
@@ -18,9 +21,9 @@ class TwitchGrabber:
     @staticmethod
     def __parse_date(date_string: str) -> datetime | bool:
         try:
-            dt: datetime = datetime.fromisoformat(date_string)
-            return dt
-        except ValueError:
+            dt: datetime = parser.parse(date_string)
+            return dt.astimezone(UTC)
+        except ParserError:
             return False
 
     @classmethod
