@@ -15,6 +15,7 @@ from data.IMCache import IMCache
 
 
 class TwitchGrabber:
+    # check https://gist.github.com/TwitchToken/bf056f46456f97c0f6b21d0e438a00f3 for latest GraphQL client-id
     __key: str = 'r8s4dac0uhzifbpu9sjdiwzctle17ff'
     __uri: str = 'https://gql.twitch.tv/gql'
 
@@ -76,7 +77,7 @@ class TwitchGrabber:
                     name=channel['login'],
                     displayed_name=channel['displayName'],
                     is_partnered=channel['roles']['isPartner'],
-                    avatar_uri=channel['profileImageURL'].replace('150x150', '50x50'),
+                    avatar_uri=channel['profileImageURL'],
                     live_count=channel['stream']['viewersCount'] if channel['stream'] is not None else None,
                     follower_count=channel['followers']['totalCount'],
                     latest_stream=started_at if started_at is not False else None,

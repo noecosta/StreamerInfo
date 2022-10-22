@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import io
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from enum import Enum
+from typing import Any
 
 from PIL import Image, ImageDraw, ImageFont
 from falcon import Request, Response, HTTP_200, HTTP_404
@@ -11,6 +14,15 @@ from data.IMCache import IMCache
 
 
 class TwitchWidget:
+    @dataclass
+    class Mode(Enum):
+        AUTO = None
+        JPEG = 'image/jpeg'
+        JPG = 'image/jpg'
+        PNG = 'image/png'
+        WEBP = 'image/webp'
+        DEFAULT = AUTO
+
     def __init__(self: TwitchWidget, version: str) -> None:
         self.__version__ = version
         self.ic: IMCache.__class__ = IMCache
@@ -86,26 +98,32 @@ class TwitchWidget:
             response.status = HTTP_404
             return
         else:
+            params: dict[Any] = request.params
+
             # grab channel information
             channel = channel.lower()
+            if len(channel) > 25 or len(channel) < 3:
+                # ignore names shorter that are shorter than 3 characters or bigger than 25 characters
+                response.status = HTTP_404
+                return
             information: IMCache.ChannelInformation = self.ic.get(channel)
             if not information or (information.timestamp + timedelta(seconds=60)) < datetime.now():
                 # data doesn't exist or is older than one minute, refreshing it
                 information = self.tg.grab(channel)
-                if information:
-                    self.ic.store(key=channel, value=information)
+                if not information:
+                    # invalid channel, returning nothing
+                    response.status = HTTP_404
+                    return
+                self.ic.store(key=channel, value=information)
 
             # get avatar
-            avatar: io.BytesIO = None
-            if information:
-                avatar: io.BytesIO = self.tg.grab_avatar(information.avatar_uri)
+            avatar: io.BytesIO = self.tg.grab_avatar(information.avatar_uri)
 
             # generate
             base: Image = Image.new('RGBA', (275, 221), (255, 0, 0, 0))
             base_font: ImageFont = ImageFont.truetype('static/monogram-extended.ttf')
             base_2d_draw: ImageDraw = ImageDraw.Draw(base)
-            if avatar:
-                tpl_avatar: Image = Image.open(avatar).convert('RGBA')
+            tpl_avatar: Image = Image.open(avatar).convert('RGBA')
             tpl_widget_bg: Image = Image.open('static/widget/widget_background.png').convert('RGBA')
             tpl_widget_title: Image = Image.open('static/widget/widget_title.png').convert('RGBA')
             tpl_content_bg: Image = Image.open('static/widget/content_background.png').convert('RGBA')
@@ -116,8 +134,7 @@ class TwitchWidget:
             base.alpha_composite(tpl_widget_bg)
             base.alpha_composite(tpl_widget_title)
             base.alpha_composite(tpl_content_bg)
-            if avatar:
-                base.alpha_composite(tpl_avatar, dest=(18, 52))
+            base.alpha_composite(tpl_avatar, dest=(18, 52))
             base.alpha_composite(tpl_channel_avatar_border)
             base_2d_draw.text(
                 xy=(235, 6),
@@ -172,14 +189,58 @@ class TwitchWidget:
                 )
 
             rendered_image: io.BytesIO = io.BytesIO()
-            base.save(rendered_image, 'WEBP', lossless=True, quality=100)
 
             # disable caching
             response.append_header('Cache-Control', 'no-cache, no-store, must-revalidate')
             response.append_header('Pragma', 'no-cache')
             response.append_header('Expires', '0')
 
+            content_type: str = 'text/plain'
+            level: int = 9
+            if 'level' in params:
+                level = int(params.get('level'))
+                if level > 9 or level < 0:
+                    level = 9
+            if 'mode' in params:
+                # match mode
+                chosen_mode: str = params.get('mode').upper()
+                if chosen_mode == TwitchWidget.Mode.PNG.name:
+                    content_type = TwitchWidget.Mode.PNG.value
+                    base.save(rendered_image, 'PNG', optimize=True, compress_level=level)
+                elif chosen_mode == TwitchWidget.Mode.JPEG.name or chosen_mode == TwitchWidget.Mode.JPG.name:
+                    content_type = TwitchWidget.Mode.JPEG.value
+                    base = base.convert('RGB')
+                    base.save(rendered_image, 'JPEG', optimize=True, quality=(level * 10) + 5)
+                elif chosen_mode == TwitchWidget.Mode.WEBP.name:
+                    content_type = TwitchWidget.Mode.WEBP.value
+                    base.save(rendered_image, 'WEBP', lossless=True, quality=(level * 10) + 10)
+                else:
+                    # set to automated mode
+                    content_type = None
+            else:
+                # set to automated mode
+                content_type = None
+            # check if automation needed
+            if content_type is None:
+                # automatic mode
+                headers: dict[Any] = request.headers
+                if 'USER-AGENT' in request.headers:
+                    ua: str = request.headers.get('USER-AGENT')
+                    if ua.rfind('Chrome') != -1 or ua.rfind('Chromium') != -1 or ua.rfind('Firefox') != -1 or ua.rfind('EDG') != -1 or ua.rfind('Safari') != -1 or ua.rfind('OPR') != -1:
+                        content_type = TwitchWidget.Mode.WEBP.value
+                        base.save(rendered_image, 'WEBP', lossless=True, quality=(level * 10) + 10)
+                    else:
+                        # unknown browser, serving most supported format
+                        content_type = TwitchWidget.Mode.JPEG.value
+                        base = base.convert('RGB')
+                        base.save(rendered_image, 'JPEG', optimize=True, quality=(level * 10) + 5)
+                else:
+                    # unknown browser, serving most supported format
+                    content_type = TwitchWidget.Mode.JPEG.value
+                    base = base.convert('RGB')
+                    base.save(rendered_image, 'JPEG', optimize=True, quality=(level * 10) + 5)
+
             # return image
-            response.content_type = 'image/webp'
+            response.content_type = content_type
             response.status = HTTP_200
             response.data = rendered_image.getvalue()
