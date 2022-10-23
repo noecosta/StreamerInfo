@@ -10,6 +10,7 @@ from PIL import Image, ImageDraw, ImageFont
 from falcon import Request, Response, HTTP_200, HTTP_404
 
 from business.TwitchGrabber import TwitchGrabber
+from business.Utilities import Utilities
 from data.IMCache import IMCache
 
 
@@ -121,14 +122,14 @@ class TwitchWidget:
 
             # generate
             base: Image = Image.new('RGBA', (275, 221), (255, 0, 0, 0))
-            base_font: ImageFont = ImageFont.truetype('static/monogram-extended.ttf')
+            base_font: ImageFont = ImageFont.truetype(str(Utilities.get_dynamic_path(path='static/internals/monogram-extended.ttf')))
             base_2d_draw: ImageDraw = ImageDraw.Draw(base)
             tpl_avatar: Image = Image.open(avatar).convert('RGBA')
-            tpl_widget_bg: Image = Image.open('static/widget/widget_background.png').convert('RGBA')
-            tpl_widget_title: Image = Image.open('static/widget/widget_title.png').convert('RGBA')
-            tpl_content_bg: Image = Image.open('static/widget/content_background.png').convert('RGBA')
-            tpl_channel_avatar_border: Image = Image.open('static/widget/channel_avatar_border.png').convert('RGBA')
-            tpl_channel_partnered: Image = Image.open('static/widget/channel_partnered.png').convert('RGBA')
+            tpl_widget_bg: Image = Image.open(str(Utilities.get_dynamic_path(path='static/internals/widget_background.png'))).convert('RGBA')
+            tpl_widget_title: Image = Image.open(str(Utilities.get_dynamic_path(path='static/internals/widget_title.png'))).convert('RGBA')
+            tpl_content_bg: Image = Image.open(str(Utilities.get_dynamic_path(path='static/internals/content_background.png'))).convert('RGBA')
+            tpl_channel_avatar_border: Image = Image.open(str(Utilities.get_dynamic_path(path='static/internals/channel_avatar_border.png'))).convert('RGBA')
+            tpl_channel_partnered: Image = Image.open(str(Utilities.get_dynamic_path(path='static/internals/channel_partnered.png'))).convert('RGBA')
 
             # title: ImageFont = base_font.font_variant(None, 40)
             base.alpha_composite(tpl_widget_bg)

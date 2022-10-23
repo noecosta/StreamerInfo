@@ -29,7 +29,7 @@ sys.stdout = LoggerProxy(severity=Logger.Severity.DEBUG)
 sys.stderr = LoggerProxy(severity=Logger.Severity.ERROR)
 
 # set version
-__version__: str = '0.1.1'
+__version__: str = '1.0.0'
 
 # force console output only
 Logger.mode = Logger.Mode.CONSOLE
